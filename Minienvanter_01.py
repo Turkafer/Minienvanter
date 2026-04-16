@@ -2,59 +2,108 @@ import streamlit as st
 import gspread
 import pandas as pd
 
-# 1. Sayfa Ayarları
 st.set_page_config(page_title="Envanter Takip", layout="wide")
-st.title("📦 Basit Envanter Sistemi")
+st.title("📦 Profesyonel Envanter Sistemi")
 
-# 2. Google Sheets Bağlantısı
+# ---------------------------
+# BAĞLANTI
+# ---------------------------
+@st.cache_resource
 def baglanti_kur():
-    try:
-        # Secrets'tan direkt al (EN DOĞRU YÖNTEM)
-        gc = gspread.service_account_from_dict(st.secrets)
-
-        # Spreadsheet'i URL ile aç
-        sh = gc.open_by_url(st.secrets["spreadsheet"])
-
-        # İlk sayfayı al
-        worksheet = sh.get_worksheet(0)
-
-        return worksheet
-
-    except Exception as e:
-        st.error(f"Bağlantı Hatası: {e}")
-        return None
+    gc = gspread.service_account_from_dict(st.secrets)
+    sh = gc.open_by_url(st.secrets["spreadsheet"])
+    return sh.get_worksheet(0)
 
 worksheet = baglanti_kur()
 
-# 3. Veri İşlemleri
-if worksheet:
+# ---------------------------
+# VERİ
+# ---------------------------
+@st.cache_data(ttl=5)
+def veri_getir():
     data = worksheet.get_all_records()
-    df = pd.DataFrame(data)
+    return pd.DataFrame(data)
 
-    st.success("✅ Veritabanına Bağlanıldı!")
+df = veri_getir()
 
-    # Sidebar - Yeni ürün ekleme
-    with st.sidebar:
-        st.header("Yeni Ürün Ekle")
+KOLONLAR = [
+    "Ürün",
+    "Envanterde Olan",
+    "Gelen",
+    "Satılan",
+    "Transfer Gelen",
+    "Transfer Giden",
+    "Olması Gereken",
+    "Yerinde Olan",
+    "Fark"
+]
 
-        with st.form("ekleme_formu", clear_on_submit=True):
-            urun_adi = st.text_input("Ürün İsmi")
-            adet = st.number_input("Stok Adedi", min_value=0, step=1)
-            notlar = st.text_area("Notlar")
+if df.empty:
+    df = pd.DataFrame(columns=KOLONLAR)
 
-            submit = st.form_submit_button("Sisteme Kaydet")
+# ---------------------------
+# SIDEBAR
+# ---------------------------
+with st.sidebar:
+    st.header("➕ Yeni Kayıt")
 
-            if submit:
-                if not urun_adi:
-                    st.warning("Ürün ismi boş olamaz!")
-                else:
-                    worksheet.append_row([urun_adi, adet, notlar])
-                    st.success("Kayıt Başarılı!")
-                    st.rerun()
+    with st.form("form", clear_on_submit=True):
+        urun = st.text_input("Ürün")
 
-    # Tablo gösterimi
-    if not df.empty:
-        st.subheader("📋 Güncel Stok Listesi")
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("Henüz veri yok. Sol menüden ilk ürünü ekle.")
+        envanter = st.number_input("Envanterde Olan", min_value=0)
+        gelen = st.number_input("Gelen", min_value=0)
+        satilan = st.number_input("Satılan", min_value=0)
+        t_gelen = st.number_input("Transfer Gelen", min_value=0)
+        t_giden = st.number_input("Transfer Giden", min_value=0)
+        yerinde = st.number_input("Yerinde Olan", min_value=0)
+
+        kaydet = st.form_submit_button("Kaydet")
+
+        if kaydet:
+            if not urun:
+                st.warning("Ürün boş olamaz")
+
+            elif not df.empty and urun in df["Ürün"].values:
+                st.warning("Bu ürün zaten var!")
+
+            else:
+                olmasi_gereken = envanter + gelen + t_gelen - satilan - t_giden
+                fark = yerinde - olmasi_gereken
+
+                worksheet.append_row([
+                    urun,
+                    envanter,
+                    gelen,
+                    satilan,
+                    t_gelen,
+                    t_giden,
+                    olmasi_gereken,
+                    yerinde,
+                    fark
+                ])
+
+                st.success("Kayıt eklendi!")
+                st.cache_data.clear()
+                st.rerun()
+
+# ---------------------------
+# TABLO
+# ---------------------------
+st.subheader("📊 Envanter Durumu")
+
+if not df.empty:
+    df["Olması Gereken"] = (
+        df["Envanterde Olan"]
+        + df["Gelen"]
+        + df["Transfer Gelen"]
+        - df["Satılan"]
+        - df["Transfer Giden"]
+    )
+
+    df["Fark"] = df["Yerinde Olan"] - df["Olması Gereken"]
+
+    st.dataframe(df, use_container_width=True)
+
+else:
+    st.info("Henüz veri yok")
+    
