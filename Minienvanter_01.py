@@ -2,78 +2,35 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# 1. SAYFA AYARLARI
-st.set_page_config(page_title="Envanter Yönetimi", layout="wide", page_icon="📦")
+# Sayfa Yapılandırması
+st.set_page_config(page_title="Envanter Sistemi", layout="wide")
+st.title("📦 Kesin Çözüm: Envanter Takibi")
 
-st.title("📦 Canlı Envanter & Sayım Mutabakatı")
-
-# 2. BAĞLANTI FONKSİYONU
-def baglanti_kur():
-    try:
-        # ÖNEMLİ: İçine project_id, private_key vb. yazmıyoruz. 
-        # Sadece bağlantı ismini ("gsheets") veriyoruz.
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        
-        # Google Sheet'teki sekme isminin "Sayfa1" olduğundan emin ol.
-        df = conn.read(worksheet="Sayfa1", ttl=0)
-        return conn, df
-    except Exception as e:
-        st.error(f"⚠️ Bağlantı Hatası: {e}")
-        return None, pd.DataFrame()
-
-# Bağlantıyı başlat
-conn, df = baglanti_kur()
-
-# 3. VERİ GİRİŞ PANELİ (SOL TARAF)
-with st.sidebar:
-    st.header("📊 Hareket Girişi")
-    with st.form("envanter_formu", clear_on_submit=True):
-        urun_adi = st.text_input("Ürün Adı")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            baslangic = st.number_input("Başlangıç", min_value=0, value=0)
-            gelen = st.number_input("Gelen (+)", min_value=0, value=0)
-            t_gelen = st.number_input("Transfer Gelen (+)", min_value=0, value=0)
-        with col2:
-            satan = st.number_input("Satan (-)", min_value=0, value=0)
-            t_giden = st.number_input("Transfer Giden (-)", min_value=0, value=0)
-            yerinde_olan = st.number_input("Yerinde (Fiziksel)", min_value=0, value=0)
-        
-        submit = st.form_submit_button("Veriyi Kaydet ve Gönder")
-
-# 4. KAYIT İŞLEMİ VE HESAPLAMA
-if submit and urun_adi and conn is not None:
-    olmasi_gereken = (baslangic + gelen + t_gelen) - (satan + t_giden)
-    fark = yerinde_olan - olmasi_gereken
+# BAĞLANTI KURMA
+# st.connection sadece 'gsheets' ismine bakar ve Secrets'ı otomatik tarar.
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df = conn.read(worksheet="Sayfa1", ttl=0)
     
-    yeni_satir = pd.DataFrame([{
-        "Ürün Adı": urun_adi,
-        "Başlangıç": baslangic,
-        "Gelen": gelen,
-        "Satan": satan,
-        "Trf Gelen": t_gelen,
-        "Trf Giden": t_giden,
-        "Yerinde Olan": yerinde_olan,
-        "Olması Gereken": olmasi_gereken,
-        "Fark": fark
-    }])
+    st.success("✅ Bağlantı Kuruldu!")
     
-    if not df.empty:
-        guncel_df = pd.concat([df, yeni_satir], ignore_index=True)
-    else:
-        guncel_df = yeni_satir
-        
-    try:
-        conn.update(worksheet="Sayfa1", data=guncel_df)
-        st.success(f"✅ {urun_adi} başarıyla kaydedildi!")
-        st.rerun()
-    except Exception as e:
-        st.error(f"Google Sheets güncelleme hatası: {e}")
+    # Veri Giriş Formu
+    with st.sidebar:
+        st.header("Veri Girişi")
+        with st.form("kayit_formu", clear_on_submit=True):
+            urun = st.text_input("Ürün Adı")
+            adet = st.number_input("Adet", min_value=0)
+            submit = st.form_submit_button("Kaydet")
+            
+            if submit and urun:
+                yeni_veri = pd.DataFrame([{"Ürün Adı": urun, "Adet": adet}])
+                guncel_df = pd.concat([df, yeni_veri], ignore_index=True)
+                conn.update(worksheet="Sayfa1", data=guncel_df)
+                st.rerun()
 
-# 5. VERİ GÖSTERİMİ
-if not df.empty:
-    st.subheader("📊 Güncel Envanter Listesi")
-    st.dataframe(df, use_container_width=True, hide_index=True)
-else:
-    st.info("💡 Henüz kayıt yok. Sol taraftan ürün ekleyebilirsiniz.")
+    # Veriyi Göster
+    st.dataframe(df, use_container_width=True)
+
+except Exception as e:
+    st.error(f"❌ Hala Hata Var: {e}")
+    st.info("Lütfen aşağıdaki Secrets adımlarını BİREBİR uygulayın.")
