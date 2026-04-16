@@ -1,36 +1,60 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+import gspread
 import pandas as pd
 
-# Sayfa Yapılandırması
 st.set_page_config(page_title="Envanter Sistemi", layout="wide")
-st.title("📦 Kesin Çözüm: Envanter Takibi")
+st.title("📦 Envanter Takip Paneli")
 
-# BAĞLANTI KURMA
-# st.connection sadece 'gsheets' ismine bakar ve Secrets'ı otomatik tarar.
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df = conn.read(worksheet="Sayfa1", ttl=0)
+# BAĞLANTI FONKSİYONU
+def baglan():
+    try:
+        # Secrets'tan bilgileri al
+        creds = {
+            "type": st.secrets["type"],
+            "project_id": st.secrets["project_id"],
+            "private_key_id": st.secrets["private_key_id"],
+            "private_key": st.secrets["private_key"].replace("\\n", "\n"),
+            "client_email": st.secrets["client_email"],
+            "client_id": st.secrets["client_id"],
+            "auth_uri": st.secrets["auth_uri"],
+            "token_uri": st.secrets["token_uri"],
+            "auth_provider_x509_cert_url": st.secrets["auth_provider_x509_cert_url"],
+            "client_x509_cert_url": st.secrets["client_x509_cert_url"]
+        }
+        
+        # Google Sheets'e yetki ile bağlan
+        gc = gspread.service_account_from_dict(creds)
+        # Dosya URL'sini kullanarak aç
+        sh = gc.open_by_url(st.secrets["spreadsheet"])
+        # Sayfa1 isimli sekmeyi seç
+        worksheet = sh.worksheet("Sayfa1")
+        return worksheet
+    except Exception as e:
+        st.error(f"Bağlantı Hatası: {e}")
+        return None
+
+worksheet = baglan()
+
+if worksheet:
+    # Verileri Çek
+    data = worksheet.get_all_records()
+    df = pd.DataFrame(data)
     
-    st.success("✅ Bağlantı Kuruldu!")
+    st.success("✅ Google Sheets Bağlantısı Aktif!")
     
-    # Veri Giriş Formu
+    # Form Alanı
     with st.sidebar:
-        st.header("Veri Girişi")
-        with st.form("kayit_formu", clear_on_submit=True):
+        st.header("Yeni Kayıt")
+        with st.form("kayit_formu"):
             urun = st.text_input("Ürün Adı")
             adet = st.number_input("Adet", min_value=0)
             submit = st.form_submit_button("Kaydet")
             
             if submit and urun:
-                yeni_veri = pd.DataFrame([{"Ürün Adı": urun, "Adet": adet}])
-                guncel_df = pd.concat([df, yeni_veri], ignore_index=True)
-                conn.update(worksheet="Sayfa1", data=guncel_df)
+                # Sayfanın en altına yeni satır ekle
+                worksheet.append_row([urun, adet])
+                st.success("Kaydedildi!")
                 st.rerun()
 
-    # Veriyi Göster
+    # Tabloyu Göster
     st.dataframe(df, use_container_width=True)
-
-except Exception as e:
-    st.error(f"❌ Hala Hata Var: {e}")
-    st.info("Lütfen aşağıdaki Secrets adımlarını BİREBİR uygulayın.")
