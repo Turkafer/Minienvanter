@@ -1,38 +1,31 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import json
 
 # 1. SAYFA AYARLARI
 st.set_page_config(page_title="Envanter Yönetimi", layout="wide", page_icon="📦")
 
 st.title("📦 Canlı Envanter & Sayım Mutabakatı")
 
-# 2. BAĞLANTI FONKSİYONU (Çakışmaları Gideren Versiyon)
+# 2. BAĞLANTI FONKSİYONU
 def baglanti_kur():
     try:
         # Secrets kontrolü
         if "connections" not in st.secrets or "gsheets" not in st.secrets.connections:
-            st.error("❌ Secrets ayarları eksik! Streamlit Cloud panelini kontrol et.")
+            st.error("❌ Secrets ayarları eksik! [connections.gsheets] başlığını kontrol et.")
             return None, pd.DataFrame()
 
-        # Ayarları kopyala
-        creds = dict(st.secrets["connections"]["gsheets"])
-        
-        # HATA ÇÖZÜMÜ: 'type' parametresi çakışmasını engellemek için creds içinden siliyoruz
-        if "type" in creds:
-            del creds["type"]
-            
-        # Anahtardaki PEM formatı hatalarını temizle
-        if "private_key" in creds:
-            creds["private_key"] = creds["private_key"].replace("\\n", "\n")
-        
-        # BAĞLANTI: type parametresini sadece bir kez (burada) veriyoruz
-        conn = st.connection("gsheets", type=GSheetsConnection, **creds)
+        # BAĞLANTI: Kütüphanenin kendi iç mekanizmasını kullanıyoruz.
+        # Manuel parametre (project_id vb.) göndermiyoruz, kütüphane Secrets'tan otomatik okuyacak.
+        conn = st.connection("gsheets", type=GSheetsConnection)
         
         # Veriyi çek
         df = conn.read(worksheet="Sayfa1", ttl=0)
         return conn, df
     except Exception as e:
+        # Eğer hala PEM/anahtar hatası verirse, Secrets'taki private_key'i 
+        # tek satırda \n karakterleriyle yazdığından emin olmalısın.
         st.error(f"⚠️ Bağlantı Hatası: {e}")
         return None, pd.DataFrame()
 
@@ -90,6 +83,7 @@ if submit and urun_adi and conn is not None:
 if not df.empty:
     st.subheader("📊 Güncel Envanter Listesi")
     
+    # Fark sütunu için renklendirme
     def style_fark(val):
         color = 'red' if val < 0 else ('green' if val > 0 else 'black')
         return f'color: {color}; font-weight: bold'
@@ -108,4 +102,4 @@ if not df.empty:
     if "Fark" in df.columns:
         c3.metric("Toplam Fark", int(df["Fark"].sum()))
 else:
-    st.info("💡 Henüz kayıt yok. Sol taraftan ekleme yapabilirsin.")
+    st.info("💡 Henüz kayıt yok. Sol taraftan ürün ekleyerek başlayabilirsin.")
