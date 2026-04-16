@@ -7,86 +7,90 @@ st.set_page_config(page_title="Envanter Yönetimi", layout="wide", page_icon="�
 
 st.title("📦 Canlı Envanter & Sayım Mutabakatı")
 
-# 2. BAĞLANTI FONKSİYONU
+# 2. BAĞLANTI FONKSİYONU (PEM TEMİZLEME MOTORU)
 def baglanti_kur():
     try:
-        # st.connection, Secrets içindeki [connections.gsheets] alanını otomatik okur.
-        conn = st.connection("gsheets", type=GSheetsConnection)
+        # Secrets yapısını kontrol et
+        if "connections" not in st.secrets:
+            st.error("❌ Secrets ayarları bulunamadı!")
+            return None, pd.DataFrame()
+
+        # Anahtarı el ile tamir etme (InvalidByte hatasını çözer)
+        creds = dict(st.secrets["connections"]["gsheets"])
         
-        # Google Sheet'teki sekme adının "Sayfa1" olduğundan emin olun.
+        if "private_key" in creds:
+            p_key = creds["private_key"]
+            # Yanlış kopyalanan gizli karakterleri ve boşlukları temizler
+            p_key = p_key.replace("\\n", "\n").replace(" ", "").replace("_", "")
+            
+            # Başlık ve bitişi standart hale getir (Alt çizgileri ve boşlukları temizledikten sonra)
+            if "BEGINPRIVATEKEY" in p_key:
+                p_key = p_key.replace("-----BEGINPRIVATEKEY-----", "-----BEGIN PRIVATE KEY-----\n")
+            if "ENDPRIVATEKEY" in p_key:
+                p_key = p_key.replace("-----ENDPRIVATEKEY-----", "\n-----END PRIVATE KEY-----")
+            
+            creds["private_key"] = p_key
+
+        # 'type' parametresi çakışmasını önle
+        creds.pop("type", None)
+
+        # Bağlantıyı kur
+        conn = st.connection("gsheets", type=GSheetsConnection, **creds)
         df = conn.read(worksheet="Sayfa1", ttl=0)
         return conn, df
     except Exception as e:
-        st.error(f"⚠️ Bağlantı Kurulamadı! Detay: {e}")
-        st.info("İpucu: Eğer 'Unable to load PEM file' hatası alıyorsanız, Secrets kutusundaki private_key formatını kontrol edin.")
+        st.error(f"⚠️ Kritik Bağlantı Hatası: {e}")
         return None, pd.DataFrame()
 
 # Bağlantıyı başlat
 conn, df = baglanti_kur()
 
-# 3. VERİ GİRİŞ PANELİ (SOL TARAF)
+# 3. VERİ GİRİŞ PANELİ
 with st.sidebar:
     st.header("📊 Hareket Girişi")
-    with st.form("envanter_formu", clear_on_submit=True):
-        urun_adi = st.text_input("Ürün Adı")
-        
+    with st.form("envanter_form", clear_on_submit=True):
+        urun = st.text_input("Ürün Adı")
         col1, col2 = st.columns(2)
         with col1:
-            baslangic = st.number_input("Başlangıç", min_value=0, value=0)
-            gelen = st.number_input("Gelen (+)", min_value=0, value=0)
-            t_gelen = st.number_input("Transfer Gelen (+)", min_value=0, value=0)
+            baslangic = st.number_input("Başlangıç", min_value=0)
+            gelen = st.number_input("Gelen (+)", min_value=0)
+            t_gelen = st.number_input("Trf Gelen (+)", min_value=0)
         with col2:
-            satan = st.number_input("Satan (-)", min_value=0, value=0)
-            t_giden = st.number_input("Transfer Giden (-)", min_value=0, value=0)
-            yerinde_olan = st.number_input("Yerinde (Fiziksel)", min_value=0, value=0)
+            satan = st.number_input("Satan (-)", min_value=0)
+            t_giden = st.number_input("Trf Giden (-)", min_value=0)
+            sayim = st.number_input("Yerinde (Fiziksel)", min_value=0)
         
-        submit = st.form_submit_button("Veriyi Kaydet ve Gönder")
+        submit = st.form_submit_button("Kaydet ve Gönder")
 
-# 4. KAYIT İŞLEMİ VE HESAPLAMA
-if submit and urun_adi and conn is not None:
-    # Matematiksel Hesaplama
-    olmasi_gereken = (baslangic + gelen + t_gelen) - (satan + t_giden)
-    fark = yerinde_olan - olmasi_gereken
+# 4. KAYIT İŞLEMİ
+if submit and urun and conn is not None:
+    beklenen = (baslangic + gelen + t_gelen) - (satan + t_giden)
+    fark = sayim - beklenen
     
-    # Yeni veri satırı
     yeni_satir = pd.DataFrame([{
-        "Ürün Adı": urun_adi,
+        "Ürün Adı": urun,
         "Başlangıç": baslangic,
         "Gelen": gelen,
         "Satan": satan,
         "Trf Gelen": t_gelen,
         "Trf Giden": t_giden,
-        "Yerinde Olan": yerinde_olan,
-        "Olması Gereken": olmasi_gereken,
+        "Yerinde Olan": sayim,
+        "Olması Gereken": beklenen,
         "Fark": fark
     }])
     
-    # Mevcut veriye ekle
-    if not df.empty:
-        guncel_df = pd.concat([df, yeni_satir], ignore_index=True)
-    else:
-        guncel_df = yeni_satir
-        
-    # Google Sheets'e yükle
+    guncel_df = pd.concat([df, yeni_satir], ignore_index=True) if not df.empty else yeni_satir
+    
     try:
         conn.update(worksheet="Sayfa1", data=guncel_df)
-        st.success(f"✅ {urun_adi} başarıyla kaydedildi!")
+        st.success(f"✅ {urun} kaydedildi!")
         st.rerun()
     except Exception as e:
-        st.error(f"Yazma hatası oluştu: {e}")
+        st.error(f"Güncelleme hatası: {e}")
 
-# 5. VERİ GÖSTERİMİ (ANA EKRAN)
+# 5. TABLO GÖSTERİMİ
 if not df.empty:
-    st.subheader("📊 Güncel Envanter Listesi")
-    
-    def style_fark(val):
-        color = 'red' if val < 0 else ('green' if val > 0 else 'black')
-        return f'color: {color}; font-weight: bold'
-
-    st.dataframe(
-        df.style.applymap(style_fark, subset=['Fark']),
-        use_container_width=True,
-        hide_index=True
-    )
+    st.subheader("📋 Güncel Envanter Listesi")
+    st.dataframe(df, use_container_width=True, hide_index=True)
 else:
-    st.info("💡 Henüz kayıt yok. Sol taraftan ürün ekleyebilirsiniz.")
+    st.info("💡 Henüz kayıt yok.")
