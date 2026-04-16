@@ -21,7 +21,7 @@ def baglanti_kur():
         conn = st.connection("gsheets", type=GSheetsConnection)
         
         # Veriyi çek
-        df = conn.read(worksheet="Sayfa1", ttl=0)
+        df = conn.read(worksheet="minienvanter", ttl=0)
         return conn, df
     except Exception as e:
         # Eğer hala PEM/anahtar hatası verirse, Secrets'taki private_key'i 
