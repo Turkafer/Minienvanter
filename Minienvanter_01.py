@@ -4,11 +4,10 @@ import pandas as pd
 # 1. SAYFA AYARLARI
 st.set_page_config(page_title="Hızlı Envanter", layout="wide", page_icon="📦")
 st.title("📦 Veritabanısız Envanter Takip Paneli")
-st.info("Not: Bu sürümde veriler hafızada tutulur. Sayfa yenilenirse veriler sıfırlanır.")
+st.info("💡 Not: Bu sürümde veriler hafızada tutulur. Sayfa yenilenirse veriler sıfırlanır.")
 
 # 2. HAFIZA (SESSION STATE) KURULUMU
-# Uygulama ilk açıldığında boş bir tablo oluşturur
-if 'envanter_verisi' not in st.secrets and 'envanter_tablosu' not in st.session_state:
+if 'envanter_tablosu' not in st.session_state:
     st.session_state.envanter_tablosu = pd.DataFrame(columns=[
         "Ürün Adı", "Başlangıç", "Gelen", "Satan", 
         "Trf Gelen", "Trf Giden", "Fiziksel Sayım", 
@@ -74,27 +73,36 @@ if not df.empty:
     
     # Renklendirme Fonksiyonu
     def renk_fark(val):
-        color = 'red' if val < 0 else ('green' if val > 0 else 'white')
-        return f'background-color: {color}; color: black'
+        if val < 0:
+            return 'background-color: #ffcccc; color: #990000; font-weight: bold' # Kırmızı tonları
+        elif val > 0:
+            return 'background-color: #ccffcc; color: #006600; font-weight: bold' # Yeşil tonları
+        else:
+            return ''
 
+    # .map() kullanımıyla versiyon hatası giderildi
     st.dataframe(
-        df.style.applymap(renk_fark, subset=['Fark']),
-        use_container_width=True
+        df.style.map(renk_fark, subset=['Fark']),
+        use_container_width=True,
+        hide_index=True
     )
     
-    # Verileri indirme butonu (Excel/CSV olarak alabilmen için)
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Listeyi Bilgisayarına İndir (CSV)",
-        data=csv,
-        file_name='envanter_listesi.csv',
-        mime='text/csv',
-    )
+    st.divider()
+    
+    # Alt tarafta veri yönetimi
+    col_dl, col_clr = st.columns([4, 1])
+    with col_dl:
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Listeyi Bilgisayarına İndir (CSV)",
+            data=csv,
+            file_name='envanter_listesi.csv',
+            mime='text/csv',
+        )
+    with col_clr:
+        if st.button("🗑️ Listeyi Sıfırla"):
+            st.session_state.envanter_tablosu = pd.DataFrame(columns=df.columns)
+            st.rerun()
 else:
     st.write("---")
-    st.info("Henüz veri girişi yapılmadı. Sol taraftaki formu kullanarak başlayabilirsiniz.")
-
-# Verileri Temizle Butonu
-if st.button("Tüm Listeyi Temizle"):
-    st.session_state.envanter_tablosu = pd.DataFrame(columns=df.columns)
-    st.rerun()
+    st.info("Henüz veri girişi yapılmadı. Sol taraftaki formu kullanarak ürün ekleyebilirsiniz.")
