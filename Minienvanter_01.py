@@ -3,7 +3,7 @@ import pandas as pd
 
 # 1. SAYFA AYARLARI
 st.set_page_config(page_title="Hızlı Envanter", layout="wide", page_icon="📦")
-st.title("📦 Veritabanısız Envanter Takip Paneli")
+st.title("📦 Envanter Takip Paneli")
 st.info("💡 Not: Bu sürümde veriler hafızada tutulur. Sayfa yenilenirse veriler sıfırlanır.")
 
 # 2. HAFIZA (SESSION STATE) KURULUMU
